@@ -400,7 +400,6 @@ impl Gui {
     fn update_counters(target: &ProgressBar) {
         if let Some(core) = Core::get() {
             let metrics = core.get_collector::<MagicsockMetrics>().unwrap();
-            tracing::error!("metrics enabled");
             let send_ipv4 = HumanBytes(metrics.send_ipv4.get());
             let send_ipv6 = HumanBytes(metrics.send_ipv6.get());
             let send_relay = HumanBytes(metrics.send_relay.get());
@@ -933,6 +932,8 @@ fn inspect_ticket(ticket: &str) -> anyhow::Result<()> {
 }
 
 pub async fn run(command: Commands, config: &NodeConfig) -> anyhow::Result<()> {
+    let data_dir = iroh_data_root()?;
+    let _guard = crate::logging::init_terminal_and_file_logging(&config.file_logs, &data_dir)?;
     match command {
         Commands::Report {
             stun_host,
