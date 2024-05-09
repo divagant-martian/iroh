@@ -335,6 +335,7 @@ impl MagicSock {
     /// Note this is a user-facing API and does not wrap the [`SocketAddr`] in a
     /// [`QuicMappedAddr`] as we do internally.
     pub fn get_mapping_addr(&self, node_key: &PublicKey) -> Option<SocketAddr> {
+        tracing::info!(node = node_key.fmt_short(), "getting magpped_addr for node");
         self.node_map
             .get_quic_mapped_addr_for_node_key(node_key)
             .map(|a| a.0)
@@ -2147,6 +2148,9 @@ impl Actor {
                         Ok(Err(_)) => Err(anyhow!("netcheck report not received")),
                         Err(err) => Err(anyhow!("netcheck report timeout: {:?}", err)),
                     };
+                    // let seconds = 12;
+                    // info!("delaying sending netcheck report by {seconds} seconds");
+                    // tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
                     msg_sender
                         .send(ActorMessage::NetcheckReport(report, why))
                         .await
