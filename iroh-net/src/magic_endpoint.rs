@@ -1328,7 +1328,7 @@ mod tests {
         let ep1 = MagicEndpoint::testing_builder()
             .secret_key(ep1_secret_key)
             .relay_mode(RelayMode::Custom(relay_map.clone()))
-            .bind(0)
+            .bind(9554)
             .await
             .unwrap();
 
@@ -1340,7 +1340,11 @@ mod tests {
             .unwrap();
 
         let ep1_nodeid = ep1.node_id();
-        let ep1_nodeaddr = NodeAddr::from_parts(ep1_nodeid, Some(relay_url), vec![]);
+        let ep1_nodeaddr = NodeAddr::from_parts(
+            ep1_nodeid,
+            Some(relay_url),
+            vec![([127, 0, 0, 1], 9554).into()],
+        );
 
         let timeout = std::time::Duration::from_secs(3);
         let recv = tokio::spawn(tokio::time::timeout(timeout * 2, recv_hello(ep1.clone())));
