@@ -2155,9 +2155,9 @@ impl Actor {
                         Ok(Err(_)) => Err(anyhow!("netcheck report not received")),
                         Err(err) => Err(anyhow!("netcheck report timeout: {:?}", err)),
                     };
-                    if me == String::from("xhtexnpscbraswro") {
-                    // if me == String::from("jtwewhuntpzne75d") {
-                        let seconds = 20;
+                    // if me == String::from("xhtexnpscbraswro") {
+                    if me == String::from("jtwewhuntpzne75d") {
+                        let seconds = 2;
                         info!(%me, "delaying sending netcheck report by {seconds} seconds");
                         tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
                     }
