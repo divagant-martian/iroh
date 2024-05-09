@@ -492,7 +492,10 @@ impl MagicEndpoint {
 
         // Start connecting via quinn. This will time out after 10 seconds if no reachable address
         // is available.
+        tracing::info!("connecting quinn");
         let conn = self.connect_quinn(&node_id, alpn, addr).await;
+
+        tracing::info!("connected quinn");
 
         // Cancel the node discovery task (if still running).
         if let Some(discovery) = discovery {
@@ -508,7 +511,6 @@ impl MagicEndpoint {
         alpn: &[u8],
         addr: SocketAddr,
     ) -> Result<quinn::Connection> {
-        tracing::info!("connecting quinn");
         let client_config = {
             let alpn_protocols = vec![alpn.to_vec()];
             let tls_client_config = tls::make_client_config(
@@ -529,7 +531,10 @@ impl MagicEndpoint {
             .endpoint
             .connect_with(client_config, addr, "localhost")?;
 
+        let me = self.node_id().fmt_short();
+        tracing::info!(%me, "GETTING CONNECTION");
         let connection = connect.await.context("failed connecting to provider")?;
+        tracing::info!("GOT CONNECTION");
 
         let rtt_msg = RttMessage::NewConnection {
             connection: connection.weak_handle(),
@@ -832,6 +837,7 @@ mod tests {
 
     use std::time::Instant;
 
+    use futures_concurrency::future::FutureExt;
     use iroh_test::CallOnDrop;
     use rand_core::SeedableRng;
     use tracing::{error_span, info, info_span, Instrument};
@@ -841,6 +847,16 @@ mod tests {
     use super::*;
 
     const TEST_ALPN: &[u8] = b"n0/iroh/test";
+
+    impl MagicEndpoint {
+        /// Create a [`MagicEndpointBuilder`] that skips cert verification and uses [`TEST_ALPN`].
+        #[track_caller]
+        fn testing_builder() -> MagicEndpointBuilder {
+            MagicEndpoint::builder()
+                .alpns(vec![TEST_ALPN.to_vec()])
+                .insecure_skip_relay_cert_verify(true)
+        }
+    }
 
     #[test]
     fn test_addr_info_debug() {
@@ -1282,45 +1298,60 @@ mod tests {
     async fn test_connect_block_on_netcheck() -> Result<()> {
         let _logging_guard = iroh_test::logging::setup();
 
+        async fn recv_hello(ep: MagicEndpoint) {
+            let incoming = ep.accept().await.unwrap();
+            // info!("connection accepted");
+            let conn = incoming.await.unwrap();
+            let mut recv = conn.accept_uni().await.unwrap();
+            let m = recv.read_to_end(100).await.unwrap();
+            assert_eq!(m, b"hello");
+            // info!("msg read");
+        }
+
+        async fn send_hello(ep: MagicEndpoint, addr: NodeAddr) {
+            info!("connecting for send");
+            let conn = ep.connect(addr, TEST_ALPN).await.unwrap();
+            info!("connected for send");
+            let mut send_stream = conn.open_uni().await.unwrap();
+            // info!("uni stream open");
+            send_stream.write_all(&b"hello"[..]).await.unwrap();
+            // info!("wrote all, waiting on acks");
+            send_stream.finish().await.unwrap();
+            // info!("sending done");
+        }
+
         let (relay_map, relay_url, _relay_guard) = run_relay_server().await.unwrap();
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42);
         let ep1_secret_key = SecretKey::generate_with_rng(&mut rng);
         let ep2_secret_key = SecretKey::generate_with_rng(&mut rng);
 
-        let ep1 = MagicEndpoint::builder()
+        let ep1 = MagicEndpoint::testing_builder()
             .secret_key(ep1_secret_key)
-            .insecure_skip_relay_cert_verify(true)
-            .alpns(vec![TEST_ALPN.to_vec()])
             .relay_mode(RelayMode::Custom(relay_map.clone()))
             .bind(0)
             .await
             .unwrap();
-        let ep2 = MagicEndpoint::builder()
+
+        let ep2 = MagicEndpoint::testing_builder()
             .secret_key(ep2_secret_key)
-            .insecure_skip_relay_cert_verify(true)
-            .alpns(vec![TEST_ALPN.to_vec()])
             .relay_mode(RelayMode::Custom(relay_map))
             .bind(0)
             .await
             .unwrap();
 
-        async fn accept_hello(ep: MagicEndpoint) {
-            let incoming = ep.accept().await.unwrap();
-            info!("connection accepted");
-            let (_, _, conn) = accept_conn(incoming).await.unwrap();
-            let mut recv = conn.accept_uni().await.unwrap();
-            let m = recv.read_to_end(100).await.unwrap();
-            assert_eq!(m, b"hello");
-            info!("msg read");
-        }
-
-        tokio::spawn(accept_hello(ep1.clone()));
-
         let ep1_nodeid = ep1.node_id();
         let ep1_nodeaddr = NodeAddr::from_parts(ep1_nodeid, Some(relay_url), vec![]);
-        let conn = ep2.connect(ep1_nodeaddr, &b"my-alpn"[..]).await.unwrap();
-        let mut send_stream = conn.open_uni().await?;
-        send_stream.write_all(&b"hello"[..]).await?;
+
+        let timeout = std::time::Duration::from_secs(3);
+        let recv = tokio::spawn(tokio::time::timeout(timeout * 2, recv_hello(ep1.clone())));
+        let send = tokio::spawn(tokio::time::timeout(
+            timeout,
+            send_hello(ep2.clone(), ep1_nodeaddr),
+        ));
+
+        let (send_res, recv_res) = send.join(recv).await;
+        let _ = send_res.expect("no join error").expect("send timeout");
+        let _ = recv_res.expect("no join error").expect("recv timeout");
         Ok(())
     }
 }

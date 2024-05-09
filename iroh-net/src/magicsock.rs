@@ -469,6 +469,7 @@ impl MagicSock {
                     for t in transmits.iter_mut() {
                         t.destination = addr;
                     }
+                    tracing::info!("sending udp");
                     match self.poll_send_udp(addr, &transmits, cx) {
                         Poll::Ready(Ok(n)) => {
                             trace!(node = %public_key.fmt_short(), dst = %addr, transmit_count=n, "sent transmits over UDP");
@@ -491,10 +492,12 @@ impl MagicSock {
                             udp_pending = true;
                         }
                     }
+                    tracing::info!(udp_pending, "udp sent");
                 }
 
                 // send relay
                 if let Some(ref relay_url) = relay_url {
+                    tracing::info!("sending relay");
                     match self.poll_send_relay(relay_url, public_key, split_packets(&transmits)) {
                         Poll::Ready(sent) => {
                             relay_sent = sent;
@@ -505,6 +508,8 @@ impl MagicSock {
                             relay_pending = true;
                         }
                     }
+
+                    tracing::info!(%relay_pending, "relay sent");
                 }
 
                 if udp_addr.is_none() && relay_url.is_none() {
@@ -522,6 +527,7 @@ impl MagicSock {
                     // pending.
                     // This might result in one channel being backed up, without the system noticing, but
                     // for now this seems to be the best choice workable in the current implementation.
+                    tracing::info!("returning pending");
                     return Poll::Pending;
                 }
 
@@ -2132,6 +2138,7 @@ impl Actor {
         let pconn4 = Some(self.pconn4.as_socket());
         let pconn6 = self.pconn6.as_ref().map(|p| p.as_socket());
 
+        let me = self.msock.me.clone();
         debug!("requesting netcheck report");
         match self
             .net_checker
@@ -2148,9 +2155,12 @@ impl Actor {
                         Ok(Err(_)) => Err(anyhow!("netcheck report not received")),
                         Err(err) => Err(anyhow!("netcheck report timeout: {:?}", err)),
                     };
-                    // let seconds = 12;
-                    // info!("delaying sending netcheck report by {seconds} seconds");
-                    // tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
+                    if me == String::from("xhtexnpscbraswro") {
+                    // if me == String::from("jtwewhuntpzne75d") {
+                        let seconds = 20;
+                        info!(%me, "delaying sending netcheck report by {seconds} seconds");
+                        tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
+                    }
                     msg_sender
                         .send(ActorMessage::NetcheckReport(report, why))
                         .await
