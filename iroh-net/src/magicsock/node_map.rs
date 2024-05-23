@@ -52,9 +52,7 @@ const MAX_INACTIVE_NODES: usize = 30;
 ///   however a node could be added when this is not yet known.
 ///
 /// - A public socket address on which they are reachable on the internet, known as ip-port.
-///   These come and go as the node moves around on the internet
-///
-/// An index of nodeInfos by node key, QuicMappedAddr, and discovered ip:port endpoints.
+///   These come and go as the node moves around on the internet.
 #[derive(Default, Debug)]
 pub(super) struct NodeMap {
     inner: Mutex<NodeMapInner>,
@@ -62,11 +60,18 @@ pub(super) struct NodeMap {
 
 #[derive(Default, Debug)]
 pub(super) struct NodeMapInner {
-    by_node_key: HashMap<NodeId, usize>,
-    by_ip_port: HashMap<IpPort, usize>,
-    by_quic_mapped_addr: HashMap<QuicMappedAddr, usize>,
-    by_id: HashMap<usize, NodeState>,
+    /// Primary key of the [`NodeMap`].
+    ///
+    /// This is generated sequentially when nodes are added.
     next_id: usize,
+    /// [`NodeState`] by primary index key.
+    by_id: HashMap<usize, NodeState>,
+    /// Reverse index from [`NodeId`] to the primary key.
+    by_node_key: HashMap<NodeId, usize>,
+    /// Reverse index from [`IpPort`] to the primary key.
+    by_ip_port: HashMap<IpPort, usize>,
+    /// Reverse index from [`QuicMappedAddr`] to the primary key.
+    by_quic_mapped_addr: HashMap<QuicMappedAddr, usize>,
 }
 
 /// Identifier to look up a [`NodeState`] in the [`NodeMap`].
