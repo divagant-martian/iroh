@@ -132,7 +132,7 @@ harness = false
 duct = "0.13.6"
 
 [features]
-default = ["metrics", "discovery-pkarr-dht"]
+default = ["metrics", "discovery-pkarr-dht", "iroh-relay"]
 iroh-relay = [
     "dep:tokio-rustls-acme",
     "dep:axum",
